@@ -98,7 +98,7 @@ def read_beam(frequency, printtext=False):
         cpix=8992085
         xsize_beam=2000
 
-    fbeam_dir='/home/evanetti/BEAMS/planck_beams/'+fbeam
+    fbeam_dir='/home/evanetti/BEAMS/code_input/'+fbeam
 
     map_beam_ini=hp.fitsfunc.read_map(fbeam_dir, field=0)  #initial beam map, with less precise normalization
     map_beam_ini = np.asarray(map_beam_ini, dtype=np.float64)

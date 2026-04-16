@@ -274,8 +274,21 @@ def beamrotation_test_opt_fast(R1, v2c_i, interpolator0, nside, angradius):
 ### Beam convolution ####     
 #########################
 
+# convolution in 1 spot ---> loop over all pixels 
 def convolve_1pix(R1, v2c_i, interpolator0, nside, angradius, pixArea, cmb_map ):  #NOTA: pixel area has to be in radians!!
-
+    '''
+    Args [same as beam rotation]: 
+    - R1: first half of the rotation matrix, defined from v1c
+    - v2c_i: vector to destination pixel (where to convolve)
+    - interpolator0: contains beam values at initial pixels positions (from original beam map)
+    - nside: of the maps
+    - angradius: radius to select destination pixels (take it as x% larger than initial beam redius) - in radias
+    Args[new for convolution]:
+    - pixArea: pixel area in radians
+    - cmb_map: map to convolve (CMB map)
+    Return: 
+    - T_convolved_i: convolved T value at destination pixel v2c_i
+    '''
     beam_idpix2_interp=hp.query_disc(nside=nside, vec=v2c_i, radius=angradius, inclusive=False, nest=False, buff=None)  # get indeces of pixels around v2c
     v2_interp = np.vstack(hp.pix2vec(nside, beam_idpix2_interp)) # vectors pointing at destination pixels
 
@@ -288,15 +301,41 @@ def convolve_1pix(R1, v2c_i, interpolator0, nside, angradius, pixArea, cmb_map )
     T_convolved_i = np.dot(cmb_values, beam_interp) * pixArea 
     return  T_convolved_i
 
-
+#faster version, obtained by condensing operations
 #checked that it produces the same results as the other one
 def convolve_1pix_contracted(R1, v2c_i, interpolator0, nside, angradius, pixArea, cmb_map ):   #NOTA: pixel area has to be in radians!!
     beam_idpix2_interp=hp.query_disc(nside=nside, vec=v2c_i, radius=angradius, inclusive=False, nest=False, buff=None)
     v1_interp = rotmatrix_frame_opt(R1, v2c_i).T @ np.vstack(hp.pix2vec(nside, beam_idpix2_interp))  
     return np.dot(cmb_map[beam_idpix2_interp], interpolator0(v1_interp.T)) * pixArea 
 
+# set gnomview parameters to show image properly
+def set_gnomeview(angsize_img, xside, nside): 
+    '''
+    Args: 
+    angsize_img: angukar size of gnomeview image in degrees
+    xside: number of pixels per side of the image [xsize parameter]
+    --> computes the [reso] parameter: size of each pixel in the gnamview image, from eq: ang_size(deg)=reso*xsize/60
+    '''
+    reso=angsize_img*60/xside  #compute pix dimension
 
+    pixArea_deg= hp.nside2pixarea(nside, degrees=True) 
+    pixsize_map=np.sqrt(pixArea_deg)
+    print('image pixels size = ', reso/pixsize_map, 'times initial pixels')
+    return reso
+
+# get quantities needed to perform convolution on a disk 
 def get_convolution_quantities(map_cmb, map_beam, v1c, v2c, angradius_conv):
+    '''
+    Args: 
+    - map_cmb: map to convolve
+    - map_beam: beam map
+    - v1c: vector to original beam center (of beam in map_beam)
+    - v2c: vector to destination position (center of disk to convolve)
+    - angradius_conv: radius of the disk to convolve, in degrees
+    Return: 
+    - quantities for Args of convolve_1pix: R1, interpolator0, nside, pixArea_rad, angdistR-->angradius
+    - idpix_disk: indeces of pixels in the disk to convolve (to loop over for convolution --> get v2c_i)
+    '''
     #get Nside
     nside1=hp.get_nside(map_cmb) 
     nside2=hp.get_nside(map_beam)
@@ -328,14 +367,23 @@ def get_convolution_quantities(map_cmb, map_beam, v1c, v2c, angradius_conv):
     pixArea_rad= hp.nside2pixarea(nside, degrees=False) 
 
     idpix_disk=hp.query_disc(nside=nside, vec=v2c, radius=np.deg2rad(angradius_conv), inclusive=False, nest=False, buff=None)
-    x,y,z = hp.pixelfunc.pix2vec(nside, ipix=idpix_disk) #get v2c for all other pixels in idpix_disk (check that array had the right shape)
-    v_disk = np.vstack((x, y, z)).T 
 
-    return nside, R1, angdistR, interpolator0, pixArea_rad, idpix_disk, v_disk
+    return nside, R1, angdistR, interpolator0, pixArea_rad, idpix_disk
 
 
-def compare_map_area(map1, map2, vc, size=1500, scale='hist', titles=['Original T field','Convolved T field']):  
-    
+# compare areas (diks) of 2 maps --> plot maps and histograms of difference, relative difference 
+def compare_map_area(map1, map2, vc, disk_angradius , scale='hist', titles=['Original T field','Convolved T field']):  
+    '''
+    Args: 
+    - map1, map2: maps to compare
+    - vc, disk_angradius: center and radius of the disk area to compare (in degrees)
+    - scale: 'hist' or 'linear' --> scale for gnomview images 
+    - titles: list of titles to describe the two maps to compare.
+    Plots: 
+    - maps: map1, map2, difference map (or relative difference map)
+    - histograms: of values from difference and relative difference maps (cut at a certain percentile to show the bulk of the distribution)
+    '''
+
     fig = plt.figure(figsize=(12, 5.5))
 
     angc=hp.pixelfunc.vec2ang(np.array(vc), lonlat=True)
@@ -346,6 +394,7 @@ def compare_map_area(map1, map2, vc, size=1500, scale='hist', titles=['Original 
     map2_masked = np.where(map2==0, hp.UNSEEN, map2)
     map_diff = np.where(map2_masked != hp.UNSEEN, map1 - map2, hp.UNSEEN)
     map1_circle = np.where(map2_masked != hp.UNSEEN, map1, hp.UNSEEN)
+    map_diff_rel = np.where(map2_masked != hp.UNSEEN, (map1 - map2)/map1, hp.UNSEEN)
 
     valid1 = map1_circle != hp.UNSEEN
     valid_diff = map_diff != hp.UNSEEN
@@ -353,21 +402,60 @@ def compare_map_area(map1, map2, vc, size=1500, scale='hist', titles=['Original 
     print(f'\n(min,max) original T field: ({np.min(map1_circle[valid1]):.2f} , {np.max(map1_circle[valid1]):.2f})')
     print(f'(min,max) convolved T field: ({np.min(map2):.2f} , {np.max(map2):.2f})')
     print(f'(min,max) difference: ({np.min(map_diff[valid_diff]):.2f} , {np.max(map_diff[valid_diff]):.2f})')
+    print(f'(min,max) relative difference: ({np.min(map_diff_rel[valid_diff]):.2f} , {np.max(map_diff_rel[valid_diff]):.2f})')
 
-    hp.visufunc.gnomview(map1_circle, rot=[phic, thetac], reso=0.1, xsize=size, norm=scale, title=titles[0], return_projected_map=True , sub=(1, 3, 1)) #, min=-300, max=300)  
-    hp.visufunc.gnomview(map2_masked, rot=[phic, thetac], reso=0.1, xsize=size, norm=scale, title=titles[1], return_projected_map=True , sub=(1, 3, 2)) #, min=-300, max=300)  
-    hp.visufunc.gnomview(map_diff, rot=[phic, thetac], reso=0.1, xsize=size, norm=scale, title='Difference', return_projected_map=True , sub=(1, 3, 3)) #, min=-300, max=300)  
+
+    # PLOT maps
+    xsize=1500
+    nside=hp.get_nside(map1)
+    reso=set_gnomeview(2.2*disk_angradius, xsize, nside)
+    hp.visufunc.gnomview(map1_circle, rot=[phic, thetac], reso=reso, xsize=xsize, norm=scale, title=titles[0], return_projected_map=True , sub=(1, 3, 1)) #, min=-300, max=300)  
+    hp.visufunc.gnomview(map2_masked, rot=[phic, thetac], reso=reso, xsize=xsize, norm=scale, title=titles[1], return_projected_map=True , sub=(1, 3, 2)) #, min=-300, max=300)  
+    hp.visufunc.gnomview(map_diff, rot=[phic, thetac], reso=reso, xsize=xsize, norm=scale, title='Difference', return_projected_map=True , sub=(1, 3, 3)) #, min=-300, max=300)  
+    plt.show()
+
+    #PLOT histograms
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    ax1.hist(map_diff[valid_diff], bins=100, color='steelblue')
+    ax1.set_title('Difference')
+
+    percentile_=96
+    arr = map_diff_rel[valid_diff]
+    threshold = np.percentile(np.abs(arr), percentile_)
+    filtered_data = arr[np.abs(arr) <= threshold]
+
+    print(r'cut realtive diff hist to show '+str(percentile_)+r'% of data points: threshold =', threshold)
+    ax2.hist(filtered_data, bins=100, color='darkblue')
+    ax2.set_title('Relative difference (cut at '+str(percentile_)+r' percentile)')
+
+    if threshold<1e-2:
+        ax2.xaxis.set_major_formatter(plt.ScalarFormatter(useMathText=True))
+        ax2.ticklabel_format(axis='x', style='sci', scilimits=(0, 0))
+
+    plt.tight_layout()
     plt.show()
     
     return 1
 
 
-## function to perform convolution of disk and show result
-def convolve_disk(map_cmb, map_beam, v1c, phic2, thetac2, angradius_conv=1.5, size=2000 ):  #angradius_conv to be given in degrees
+## function to perform convolution of disk and show result: buits from previous functions
+def convolve_disk(map_cmb, map_beam, v1c, phic2, thetac2, angradius_conv):  #angradius_conv to be given in degrees
+    '''
+    Args: 
+    - map_cmb: map to convolve
+    - map_beam, v1c: beam map and vector to original beam center
+    - phic2, thetac2: coordinates of destination position (center of disk to convolve) in degrees
+    - angradius_conv: radius of the disk to convolve, in degrees
+    Return: 
+    - map_conv: convolved map
+    '''
 
     #get quantities for beam rotation and convolution
     v2c=hp.pixelfunc.ang2vec(phic2, thetac2, lonlat=True)
-    nside, R1, angdistR, interpolator0, pixArea_rad, idpix_disk, v_disk = get_convolution_quantities(map_cmb, map_beam, v1c, v2c, angradius_conv)
+    nside, R1, angdistR, interpolator0, pixArea_rad, idpix_disk = get_convolution_quantities(map_cmb, map_beam, v1c, v2c, angradius_conv)
+
+    x,y,z = hp.pixelfunc.pix2vec(nside, ipix=idpix_disk) #get v2c for all other pixels in idpix_disk (check that array had the right shape)
+    v_disk = np.vstack((x, y, z)).T 
 
     npix_disk=len(idpix_disk)
     print('\nnº of pixels to convolve:', len(idpix_disk))
@@ -385,7 +473,7 @@ def convolve_disk(map_cmb, map_beam, v1c, phic2, thetac2, angradius_conv=1.5, si
     map_conv[idpix_disk]=T_convolved
 
     #show results: 
-    compare_map_area(map_cmb, map_conv, v2c, size=size)
+    compare_map_area(map_cmb, map_conv, v2c, angradius_conv)
 
     return map_conv
 

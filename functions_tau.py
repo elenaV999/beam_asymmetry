@@ -111,10 +111,10 @@ def generate_realizations(l, Cl_th, tau_xi, plot=False):
         opt=1  # 1) Cls  2) Dls 
         if opt==1: 
             normCl=np.ones(len(Cl_th))
-            ylabel='$C_\ell\,[\mu K^2]$'
+            ylabel=r'$C_\ell\,[\mu K^2]$'
         elif opt==2: 
             normCl=l*(l+1)/(2*np.pi)  
-            ylabel='$\frac{\ell(\ell+1)}{2\pi}\,\,C_\ell\,[\mu K^2]$'
+            ylabel=r'$\frac{\ell(\ell+1)}{2\pi}\,\,C_\ell\,[\mu K^2]$'
         
         fig=plt.figure(figsize=(7,5))
         plt.plot(l, Cl_th, label=r'CMB th.', color='darkblue')
@@ -133,7 +133,7 @@ def generate_realizations(l, Cl_th, tau_xi, plot=False):
 
     #plot maps
     if plot==True: 
-        hp.mollview(map_xi, title="Blurred CMB map" , norm='hist', unit='$\mu K$')
+        hp.mollview(map_xi, title="Blurred CMB map" , norm='hist', unit=r'$\mu K$')
 
 
     return map_cmb, map_xi
