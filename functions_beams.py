@@ -51,20 +51,44 @@ def beam_rad_profile(map_beam, angdistR, plot=False):
     bl=np.sqrt(4*np.pi*Cls_beam)
 
     theta_arr=np.linspace(0,angdistR*1.1, 100)
-    beam_profile=hp.bl2beam(bl, theta_arr)
+    beam_profile=hp.bl2beam(bl, theta_arr) #theta needs to be in radians
+
+    #get FWHM from radial profile
+    beam_half=beam_profile[0]/2
+    idx_below = np.where(beam_profile <= beam_half)[0]
+    idx=idx_below[0] if len(idx_below) > 0 else None
+    r_cross = np.interp( beam_half, [beam_profile[idx], beam_profile[idx - 1]], [theta_arr[idx], theta_arr[idx - 1]] ) # note: reversed because np.interp works for positive monotone function
+    fwhm = 2 * r_cross 
+    print(f'FWHM: {fwhm:.4f} radians = {np.degrees(fwhm):.2f} degrees')
+
 
     if plot==True: 
         plt.figure(figsize=(8,5))
         plt.plot(theta_arr, beam_profile, color='blue')
         plt.hlines(min(theta_arr), max(theta_arr), 0., color='gray', ls='--', alpha=0.6)
         plt.yscale('log')
-        plt.xlabel(r'$\theta$', fontsize=20)
+        plt.xlabel(r'$\theta$ [rad]', fontsize=20)
         plt.ylabel(r'$\frac{|B_2-B_1|}{B_1}$', fontsize=22)
         plt.title(r'beam radial profile from $4\pi C_\ell$s', fontsize=16)
         plt.show()
 
 
     return theta_arr, beam_profile
+
+# set gnomview parameters to show image properly
+def set_gnomeview(angsize_img, nside, xside=1500): 
+    '''
+    Args: 
+    angsize_img: angukar size of gnomeview image in degrees
+    xside: number of pixels per side of the image [xsize parameter]
+    --> computes the [reso] parameter: size of each pixel in the gnamview image, from eq: ang_size(deg)=reso*xsize/60
+    '''
+    reso=angsize_img*60/xside  #compute pix dimension
+
+    pixArea_deg= hp.nside2pixarea(nside, degrees=True) 
+    pixsize_map=np.sqrt(pixArea_deg)
+    print('image pixels size = ', reso/pixsize_map, 'times initial pixels')
+    return reso
 
 
 ####################
@@ -133,30 +157,34 @@ def read_beam(frequency, printtext=False):
     return map_beam, v1c
 
 
-def plot_beam(map_beam, v1c):
+def plot_beam(map_beam, v1c, opt_plot=False):
 
     #compute Cls
     nside=hp.get_nside(map_beam)
     lmax_beam=3*nside-1
     l=np.arange(lmax_beam+1)
     Cls_beam=hp.anafast(map_beam, lmax=lmax_beam)
-    for i in range(5):
-        print(f'l={l[i]}\t 4pi*Cl=: {Cls_beam[i]*4*np.pi} \t Cl = {Cls_beam[i]}')
+    if opt_plot==True:
+        for i in range(1):
+            print(f'l={l[i]}\t 4pi*Cl=: {Cls_beam[i]*4*np.pi} \t Cl = {Cls_beam[i]}')
 
     #compute radial profile
     angdistR=beam_radius(map_beam, v1c)
     theta_arr, beam_profile = beam_rad_profile(map_beam, angdistR, plot=False)
-    print('max map_beam = ', np.max(map_beam), '\tmax rad profile = ', np.max(beam_profile))
+    if opt_plot==True:
+        print('max map_beam = ', np.max(map_beam), '\tmax rad profile = ', np.max(beam_profile))
 
     #PLOT
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))  # 3 subplots now
+    fig, axes = plt.subplots(1, 3, figsize=(10, 3))  # 3 subplots now
 
     angc_=hp.pixelfunc.vec2ang(np.array(v1c), lonlat=True)
     phic_=angc_[0][0]
     thetac_=angc_[1][0]
 
+    xside=1500
+    reso=set_gnomeview(2.2*np.degrees(angdistR), nside, xside)
     map_beam_masked = np.where(map_beam==0, hp.UNSEEN, map_beam)
-    hp.visufunc.gnomview(map_beam_masked, rot=[phic_, thetac_], reso=0.1, xsize=1200, norm='log', title='PLA beam map', return_projected_map=True , sub=(1, 3, 1))
+    hp.visufunc.gnomview(map_beam_masked, rot=[phic_, thetac_], reso=reso, xsize=xside, norm='log', title='PLA beam map', return_projected_map=True , sub=(1, 3, 1))
     for spine in axes[0].spines.values():
         spine.set_visible(False)
     axes[0].set_xticks([])  # remove x-axis ticks
@@ -168,11 +196,12 @@ def plot_beam(map_beam, v1c):
     axes[1].set_xlabel(r'$\ell$', fontsize=14)
     axes[1].set_ylabel(r'$4\pi C_\ell$', fontsize=14)
 
-    axes[2].plot(theta_arr, beam_profile, color='red')
+    theta_arr_deg = np.degrees(theta_arr)
+    axes[2].plot(theta_arr_deg, beam_profile, color='red')
     axes[2].set_yscale('log')
     axes[2].ticklabel_format(style='sci', axis='x', scilimits=(0,0))
     axes[2].set_title("Beam radial profile", fontsize=15)
-    axes[2].set_xlabel(r"$\theta$", fontsize=14)
+    axes[2].set_xlabel(r"$\theta$ [deg]", fontsize=14)
     axes[2].set_ylabel(r'$B(\theta)$', fontsize=14)
 
     plt.tight_layout()
@@ -273,12 +302,15 @@ def compare_beams(v1c, v2c, map_beam1, map_beam2):
     hp.projplot(phic1, thetac1 , 'ro', markersize=5, lonlat=True)
     hp.projplot(phic2, thetac2, 'wo', markersize=5, lonlat=True)
 
+    xside=1500
+    reso=set_gnomeview(2.2*angdistR, nside, xside)
+
     map_beam1_masked = np.where(map_beam1==0, hp.UNSEEN, map_beam1)
-    map_beam1_grid = hp.visufunc.gnomview(map_beam1_masked, rot=[phic1, thetac1], reso=0.1, xsize=1200, norm='hist', title='Beam 1', return_projected_map=True , sub=(1, 3, 2))
+    map_beam1_grid = hp.visufunc.gnomview(map_beam1_masked, rot=[phic1, thetac1], reso=reso, xsize=xside, norm='hist', title='Beam 1', return_projected_map=True , sub=(1, 3, 2))
     #hp.projplot(phic1, thetac1, 'ro', markersize=5, lonlat=True) 
 
     map_beam2_masked = np.where(map_beam2==0, hp.UNSEEN, map_beam2)
-    map_beam2_grid = hp.visufunc.gnomview(map_beam2_masked, rot=[phic2, thetac2], reso=0.1, xsize=1200, norm='hist', title='Beam 2', return_projected_map=True, sub=(1, 3, 3)) #min=1.0e-5, max=18. 
+    map_beam2_grid = hp.visufunc.gnomview(map_beam2_masked, rot=[phic2, thetac2], reso=reso, xsize=xside, norm='hist', title='Beam 2', return_projected_map=True, sub=(1, 3, 3)) #min=1.0e-5, max=18. 
     #hp.projplot(phic2, thetac2, 'wo', markersize=5, lonlat=True)
 
     plt.show()
@@ -370,8 +402,11 @@ def symmetrize_beam(map_beam, vec_c, plot=False):
         min_val=np.min(map_beam[map_beam != 0])
         map_beam_masked = np.where(map_beam==0, hp.UNSEEN, map_beam)
         map_beam_symm_masked = np.where(map_beam_symm==0, hp.UNSEEN, map_beam_symm)
-        hp.visufunc.gnomview(map_beam_symm_masked, rot=[phic, thetac], reso=0.1, xsize=1200, norm='hist', title='Symmetric beam', return_projected_map=True, sub=(1, 2, 1), min=min_val) # max=np.max(map_beam_pole)
-        hp.visufunc.gnomview(map_beam_masked, rot=[phic, thetac], reso=0.1, xsize=1200, norm='hist', title='Original beam', return_projected_map=True, sub=(1, 2, 2)) 
+
+        xside=1500
+        reso=set_gnomeview(2.2*angdistR, nside, xside)
+        hp.visufunc.gnomview(map_beam_symm_masked, rot=[phic, thetac], reso=reso, xsize=xside, norm='hist', title='Symmetric beam', return_projected_map=True, sub=(1, 2, 1), min=min_val) # max=np.max(map_beam_pole)
+        hp.visufunc.gnomview(map_beam_masked, rot=[phic, thetac], reso=reso, xsize=xside    , norm='hist', title='Original beam', return_projected_map=True, sub=(1, 2, 2)) 
         plt.show()
 
     return map_beam_symm

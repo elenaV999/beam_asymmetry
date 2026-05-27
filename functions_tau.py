@@ -48,6 +48,7 @@ def get_tau_arr(tau, lmax, plot=False):
 
     #original damping - not good
     lcut=30
+    print('lcut_tau = ', lcut)
     y = np.linspace(0, 3, lcut-1)
     yy = np.tanh(y)
     damping_factor=np.concatenate( (yy, np.ones(lmax-lcut+2)) )
@@ -72,7 +73,7 @@ def get_tau_arr(tau, lmax, plot=False):
         plt.tight_layout()
         plt.show()
         
-    return  tau_arr
+    return  tau_arr, tau_arr2
 
 
 def generate_realizations(l, Cl_th, tau_xi, plot=False):

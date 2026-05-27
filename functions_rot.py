@@ -309,7 +309,7 @@ def convolve_1pix_contracted(R1, v2c_i, interpolator0, nside, angradius, pixArea
     return np.dot(cmb_map[beam_idpix2_interp], interpolator0(v1_interp.T)) * pixArea 
 
 # set gnomview parameters to show image properly
-def set_gnomeview(angsize_img, xside, nside): 
+def set_gnomeview(angsize_img, nside, xside=1500): 
     '''
     Args: 
     angsize_img: angukar size of gnomeview image in degrees
@@ -406,9 +406,8 @@ def compare_map_area(map1, map2, vc, disk_angradius , scale='hist', titles=['Ori
 
 
     # PLOT maps
-    xsize=1500
     nside=hp.get_nside(map1)
-    reso=set_gnomeview(2.2*disk_angradius, xsize, nside)
+    reso=set_gnomeview(2.2*disk_angradius, nside)
     hp.visufunc.gnomview(map1_circle, rot=[phic, thetac], reso=reso, xsize=xsize, norm=scale, title=titles[0], return_projected_map=True , sub=(1, 3, 1)) #, min=-300, max=300)  
     hp.visufunc.gnomview(map2_masked, rot=[phic, thetac], reso=reso, xsize=xsize, norm=scale, title=titles[1], return_projected_map=True , sub=(1, 3, 2)) #, min=-300, max=300)  
     hp.visufunc.gnomview(map_diff, rot=[phic, thetac], reso=reso, xsize=xsize, norm=scale, title='Difference', return_projected_map=True , sub=(1, 3, 3)) #, min=-300, max=300)  
