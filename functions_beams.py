@@ -43,24 +43,20 @@ def beam_radius(map_beam, vec_c):
 
 
 def beam_rad_profile(map_beam, angdistR, plot=False): 
+    '''
+    return: 
+    theta_arr: array of angular distances at which to compute beam profile (radians)
+    beam_profile: beam profile values at the corresponding angular distances
+    '''
 
     nside=hp.get_nside(map_beam) #get Cls
     lmax_beam=3*nside-1
     l=np.arange(lmax_beam+1)
-    Cls_beam=hp.anafast(map_beam, lmax=lmax_beam)
+    Cls_beam=hp.anafast(map_beam, lmax=lmax_beam, use_pixel_weights=True)
     bl=np.sqrt(4*np.pi*Cls_beam)
 
     theta_arr=np.linspace(0,angdistR*1.1, 100)
     beam_profile=hp.bl2beam(bl, theta_arr) #theta needs to be in radians
-
-    #get FWHM from radial profile
-    beam_half=beam_profile[0]/2
-    idx_below = np.where(beam_profile <= beam_half)[0]
-    idx=idx_below[0] if len(idx_below) > 0 else None
-    r_cross = np.interp( beam_half, [beam_profile[idx], beam_profile[idx - 1]], [theta_arr[idx], theta_arr[idx - 1]] ) # note: reversed because np.interp works for positive monotone function
-    fwhm = 2 * r_cross 
-    print(f'FWHM: {fwhm:.4f} radians = {np.degrees(fwhm):.2f} degrees')
-
 
     if plot==True: 
         plt.figure(figsize=(8,5))
@@ -74,6 +70,21 @@ def beam_rad_profile(map_beam, angdistR, plot=False):
 
 
     return theta_arr, beam_profile
+
+
+def beam_FWHM(map_beam, vec_c):
+    angdistR=beam_radius(map_beam, vec_c)
+    theta_arr, beam_profile = beam_rad_profile(map_beam, angdistR)
+
+    beam_half=beam_profile[0]/2
+    idx_below = np.where(beam_profile <= beam_half)[0]
+    idx=idx_below[0] if len(idx_below) > 0 else None
+    r_cross = np.interp( beam_half, [beam_profile[idx], beam_profile[idx - 1]], [theta_arr[idx], theta_arr[idx - 1]] ) # note: reversed because np.interp works for positive monotone function
+    fwhm = 2 * r_cross 
+    print(f'FWHM: {fwhm:.4f} rad = {np.degrees(fwhm):.2f} deg')
+
+    return fwhm
+
 
 # set gnomview parameters to show image properly
 def set_gnomeview(angsize_img, nside, xside=1500): 
@@ -104,23 +115,47 @@ def read_beam(frequency, printtext=False):
     - beam map normalized to 1, cast to float64
     - beam center vector
     '''
-    beam_dict={'30GHz':0, '70GHz':1, '143GHz':2}  
+    beam_dict={'30GHz':0, '44GHz':1, '70GHz':2, '100GHz':3, '143GHz':4, '217GHz':5, '353GHz':6, '545GHz':7, '857GHz':8}  
 
-    if beam_dict[frequency]==0:  #3446 non-zero pixels  . (min, max) = (3.3462144983786857e-06, 3.023334264755249)  // cut at 1e-4 --> 0.00018 cut fraction, reduce to 2062 pixels
-        fbeam='beams_030_2247339.fits'
+    #effective beam at theta=40, phic60
+    ## LFI ##
+    if beam_dict[frequency]==0:  
+        fbeam='beams_030_2247339.fits' 
         cpix=2247339
-        xsize_beam=2800
 
-    if beam_dict[frequency]==1:  #717 non-zero pixels (don't cut)  -  (min, max) = (9.00245358934626e-05, 18.002927780151367)
-        fbeam='beams_070_2247339.fits'  #effective beam at theta=40, phic60
+    if beam_dict[frequency]==1:  
+        fbeam='beams_044_2247339.fits'  
         cpix=2247339
-        xsize_beam=1200
+
+    if beam_dict[frequency]==2:  
+        fbeam='beams_070_2247339.fits'  
+        cpix=2247339
 
 
-    if beam_dict[frequency]==2:  #10646 (need to cut) -  (min, max) = (-0.0005849457229487598, 59.50037384033203) // cut at 1e-4 --> 0.000186 cut fraction 
+    ## HFI ##
+    if beam_dict[frequency]==3:  
+        fbeam='beams_100_8992085.fits'
+        cpix=8992085
+
+    if beam_dict[frequency]==4:   
         fbeam='beams_143_8992085.fits'
         cpix=8992085
-        xsize_beam=2000
+
+    if beam_dict[frequency]==5:  
+        fbeam='beams_217_8992085.fits'
+        cpix=8992085
+
+    if beam_dict[frequency]==6:  
+        fbeam='beams_353_8992085.fits'
+        cpix=8992085
+
+    if beam_dict[frequency]==7:  
+        fbeam='beams_545_8992085.fits'
+        cpix=8992085
+
+    if beam_dict[frequency]==8:   
+        fbeam='beams_857_8992085.fits'
+        cpix=8992085
 
     fbeam_dir='/home/evanetti/BEAMS/code_input/'+fbeam
 
@@ -163,7 +198,7 @@ def plot_beam(map_beam, v1c, opt_plot=False):
     nside=hp.get_nside(map_beam)
     lmax_beam=3*nside-1
     l=np.arange(lmax_beam+1)
-    Cls_beam=hp.anafast(map_beam, lmax=lmax_beam)
+    Cls_beam=hp.anafast(map_beam, lmax=lmax_beam, use_pixel_weights=True)
     if opt_plot==True:
         for i in range(1):
             print(f'l={l[i]}\t 4pi*Cl=: {Cls_beam[i]*4*np.pi} \t Cl = {Cls_beam[i]}')
@@ -245,8 +280,8 @@ def compare_beams(v1c, v2c, map_beam1, map_beam2):
     #Cls  
     lmax_beam=3*nside_beam-1
     l=np.arange(lmax_beam+1)
-    Cl_beam1=hp.anafast(map_beam1, lmax=lmax_beam)
-    Cl_beam2=hp.anafast(map_beam2, lmax=lmax_beam)
+    Cl_beam1=hp.anafast(map_beam1, lmax=lmax_beam, use_pixel_weights=True)
+    Cl_beam2=hp.anafast(map_beam2, lmax=lmax_beam, use_pixel_weights=True)
     diff_Cls=np.abs(Cl_beam2-Cl_beam1)
     diff_rel_Cls = np.abs(Cl_beam2-Cl_beam1)/Cl_beam1
     print('\nCls factional difference at l=0', diff_rel_Cls[0] )
